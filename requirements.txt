@@ -1,3 +1,4 @@
-skore
+skore[hub]==0.16.0
 jupytext
 numpy
+ipywidgets
