@@ -15,7 +15,7 @@
 # %% [markdown]
 # # The Digital Sommelier
 #
-# ### Can machine learning pick the best bottle of white wine?
+# ### Can machine learning pick the better bottle of white wine?
 #
 # **GOSIM 2026 — Paris**
 #
