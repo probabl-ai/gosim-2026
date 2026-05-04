@@ -30,30 +30,6 @@
 #
 # **Can we build a digital sommelier that picks the better bottle?**
 
-# %%
-import warnings
-warnings.filterwarnings('ignore', category=FutureWarning)
-
-import numpy as np
-import pandas as pd
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-from sklearn.dummy import DummyClassifier
-from sklearn.ensemble import (
-    HistGradientBoostingClassifier,
-    RandomForestClassifier,
-)
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.base import clone
-from skrub import tabular_pipeline
-from skore import (
-    ComparisonReport,
-    CrossValidationReport,
-    EstimatorReport,
-)
 
 # %%
 # ── Theme: deep blue & orange ────────────────────────────────
@@ -64,6 +40,10 @@ PALETTE = [DEEP_BLUE, ORANGE, '#3A6FB0', '#F2A03D',
 BINARY_COLOURS = {'middle_low': ORANGE, 'top': DEEP_BLUE}
 BG_LIGHT = '#FAFBFD'
 GRID_COLOUR = '#D5DAE3'
+
+# %%
+import matplotlib as mpl
+import seaborn as sns
 
 mpl.rcParams.update({
     'figure.facecolor': BG_LIGHT, 'figure.figsize': (12, 5),
@@ -79,6 +59,8 @@ mpl.rcParams.update({
 sns.set_palette(PALETTE)
 
 # %%
+import pandas as pd
+
 # Load the UCI white wine quality dataset
 url = (
     'https://archive.ics.uci.edu/ml/'
@@ -99,12 +81,14 @@ print(f'Top-tier wines: {(y == "top").sum()} ({(y == "top").mean():.1%})')
 
 # %%
 # Hold out 20% for final evaluation — only training data for CV
+from sklearn.model_selection import train_test_split
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y,
 )
 print(f'Train: {X_train.shape[0]} wines / Test: {X_test.shape[0]} wines')
 
 # %%
+import matplotlib.pyplot as plt
 fig, ax = plt.subplots(figsize=(6, 4))
 pd.Series(y).value_counts().sort_index().plot.bar(
     ax=ax, color=[BINARY_COLOURS['middle_low'], BINARY_COLOURS['top']],
@@ -125,12 +109,11 @@ plt.show()
 # ## Act 2 — The Lazy Sommelier
 #
 # What if our sommelier just says *"they're all mediocre"*?
-#
-# With 80% of wines being middle-low, always predicting `middle_low`
-# gives **~80% accuracy**. Impressive? No. Useless.
 
 # %%
-# The 'lazy sommelier': always predicts middle_low
+from skrub import tabular_pipeline
+from sklearn.dummy import DummyClassifier
+from skore import CrossValidationReport
 pipe_dummy = tabular_pipeline(DummyClassifier(strategy='most_frequent'))
 report_dummy = CrossValidationReport(
     pipe_dummy, X=X_train, y=y_train, splitter=5, pos_label='top',
@@ -138,10 +121,6 @@ report_dummy = CrossValidationReport(
 
 display = report_dummy.metrics.summarize()
 display.frame()
-
-# %% [markdown]
-# ~80% accuracy, 0 recall, 0.5 AUC. Our lazy sommelier can't
-# distinguish anything — **accuracy alone is misleading.**
 
 # %% [markdown]
 # ---
@@ -152,6 +131,11 @@ display.frame()
 
 # %%
 # Three candidate sommeliers
+from sklearn.ensemble import (
+    HistGradientBoostingClassifier,
+    RandomForestClassifier,
+)
+from sklearn.linear_model import LogisticRegression
 pipe_gb = tabular_pipeline(
     HistGradientBoostingClassifier(max_iter=200, random_state=42)
 )
@@ -174,6 +158,7 @@ print('All three sommeliers trained and evaluated.')
 # One line of code to compare all candidates side by side.
 
 # %%
+from skore import ComparisonReport
 comparison = ComparisonReport(reports=[report_dummy, report_gb, report_rf, report_lr])
 
 display = comparison.metrics.summarize()
@@ -189,11 +174,6 @@ display.frame()
 # That's exactly what AUC measures: *the probability that the model
 # ranks a random top wine above a random middle-low wine.*
 #
-# Accuracy asks: "how often are you right?"
-# AUC asks: **"can you tell the difference?"**
-#
-# A good sommelier doesn't need to score every wine perfectly —
-# they need to reliably pick the better bottle.
 
 # %%
 display = comparison.metrics.roc()
@@ -204,7 +184,7 @@ display.plot()
 #
 # Before trusting any sommelier, let's check for red flags.
 # `skore.diagnose()` catches overfitting, underfitting, and other
-# methodological issues — **automatically.**
+# methodological issues.
 
 # %%
 for name, report in [
@@ -221,17 +201,11 @@ for name, report in [
             print(f"    {code_id}: {issue['title']}")
 
 # %% [markdown]
-# A sommelier who memorized the wine list instead of learning
-# about wine? That's overfitting. `diagnose()` catches it before
-# you deploy the model — **detecting problems early is cheaper
-# than fixing them late.**
-
-# %% [markdown]
 # ---
 # ## Act 4 — Finding the Best Sommelier
 #
-# One model isn't enough. Let's systematically explore the
-# hyperparameter space for **all three model families**, keep only
+# Let's explore the
+# hyperparameter space for the three model families, keep only
 # the configurations that pass `diagnose()`, and push the healthy
 # ones to the **skore hub** for team review.
 
@@ -269,6 +243,8 @@ print(f'{len(rf_reports)} RF configurations trained.')
 
 # %%
 # Filter healthy RF models, create EstimatorReports, push to hub
+from skore import EstimatorReport
+from sklearn.base import clone
 rf_healthy = {
     name: r for name, r in rf_reports.items()
     if len(r.diagnose().issues) == 0
@@ -291,6 +267,7 @@ print(f'{len(rf_healthy)} healthy RF EstimatorReports pushed to gosim/digital-so
 # ### Logistic Regression — 100 configurations
 
 # %%
+import numpy as np
 C_values = np.logspace(-4, 2, 100)
 
 lr_reports = {}
@@ -382,12 +359,6 @@ print(f'{len(gb_healthy)} healthy GB EstimatorReports pushed to gosim/digital-so
 # `diagnose()` → healthy `EstimatorReport`s pushed to the
 # **skore hub**.
 #
-# This is what `skore` enables: *rigorous model selection,
-# programmatically.* No guesswork, no manual checking — the
-# scientific guardrails are built into the workflow.
-#
-# Now go to the hub, review the reports, and pick the best
-# sommelier from each family. Paste the report names below.
 
 # %%
 # ── Select your best models from the hub ──────────────────────
@@ -433,9 +404,6 @@ print(f'\n{len(best_reports)} curated reports pushed for final selection.')
 # ---
 # ## Act 5 — The Wine Cellar (skore hub)
 #
-# Our curated best models are now on the hub in a dedicated
-# project. Go review them side by side, and pick **one final
-# sommelier**. Paste the report name below.
 
 # %%
 # ── Paste the name of your final best model here ──────────────
@@ -486,24 +454,8 @@ display.plot()
 # **This is why interpretation matters, and why we interpret
 # the final, curated model — not the first one we trained.**
 #
-# Every `EstimatorReport` on the hub carries the full scientific
-# context: metrics, ROC curves, confusion matrices, permutation
-# importance. Your team lead can review your work **without
-# re-running a single cell.**
 
-# %% [markdown]
-# ---
-# ## Act 7 — The AI Sommelier Assistant
-#
-# AI tools like Claude can generate code fast. But speed without
-# scientific rigour means you fool yourself faster.
-#
-# **skore + AI = fast *and* rigorous.**
-#
-# skore's clean, structured API makes it naturally AI-friendly.
-# Let's see this in action...
-#
-# *(live demo with Claude)*
+
 
 # %% [markdown]
 # ---
